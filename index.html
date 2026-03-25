@@ -8,10 +8,8 @@
     <script src='https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd'></script>
     <style>
         body{margin:0;padding:1rem;background-color:#111;color:white;font-family:sans-serif;}
-        /* Container utama sekarang dibatasi maksimal 500px agar rapi dan tidak full screen */
         #app-container{max-width:500px;margin:0 auto;display:flex;flex-direction:column;gap:1rem;}
         
-        /* Video container diubah menjadi rasio 4:3 dan kotaknya melengkung rapi */
         #video-container{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:0.75rem;border:2px solid #374151;overflow:hidden;display:flex;justify-content:center;align-items:center;}
         
         video,canvas{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;}
@@ -53,6 +51,12 @@
                 <h2 class='text-xs font-bold text-gray-400 mb-1'>Log Server:</h2>
                 <div id='log-display' class='text-xs font-mono text-green-300 break-words whitespace-pre-wrap'>Sistem siap...</div>
             </div>
+        </div>
+
+        <div class="w-full text-center py-4 mt-2 border-t border-gray-800">
+            <p class="text-xs text-gray-600 tracking-wide">
+                dikembangkan oleh <span class="font-semibold text-gray-500">Rangga Putra Anasta</span> | 2026
+            </p>
         </div>
     </div>
 
@@ -111,7 +115,6 @@
                 loadingMsg.innerHTML='<div class="spinner"></div><div class="font-bold text-white">Membuka Kamera...</div>';
                 let stream;
                 try{
-                    // MEMINTA RESOLUSI RENDAH (480p) AGAR HP RINGAN
                     stream=await navigator.mediaDevices.getUserMedia({
                         video: { facingMode: 'environment', width: { ideal: 480 }, height: { ideal: 360 } }
                     });
@@ -148,7 +151,6 @@
             canvas.width=video.videoWidth;
             canvas.height=video.videoHeight;
             
-            // INI BARIS YANG HILANG KEMARIN: MENGGAMBAR VIDEO KE LAYAR
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height); 
             
             const lineY=canvas.height/2;
