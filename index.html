@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <script src='https://cdn.tailwindcss.com'></script>
+    <script src='https://cdn.jsdelivr.net/npm/@tensorflow/tfjs'></script>
+    <script src='https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd'></script>
+    <style>
+        body{margin:0;padding:0;background-color:#111;color:white;font-family:sans-serif;overflow:hidden}
+        #app-container{display:flex;flex-direction:column;height:100vh;width:100%}
+        #video-container{position:relative;flex:1;background:#000;display:flex;justify-content:center;align-items:center;overflow:hidden}
+        video,canvas{position:absolute;width:100%;height:100%;object-fit:cover}
+        video{opacity:0;z-index:1}
+        canvas{z-index:10}
+        #ui-panel{background:#1f2937;padding:1rem;z-index:20;border-top:2px solid #374151}
+        .overlay-box{position:absolute;z-index:30;background:rgba(0,0,0,0.8);padding:1.5rem;border-radius:1rem;text-align:center;border:1px solid #333;left:50%;top:50%;transform:translate(-50%,-50%);width:85%;max-width:320px}
+        .spinner{border:4px solid rgba(255,255,255,0.2);border-top:4px solid #3b82f6;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:0 auto 10px auto}
+        @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+    </style>
+</head>
+<body>
+    <div id='app-container'>
+        <div id='video-container'>
+            <div id='start-panel' class='overlay-box flex flex-col items-center gap-4'>
+                <h2 class='text-lg font-bold text-white'>Sistem AI Siap</h2>
+                <p class='text-sm text-gray-400'>Tekan tombol untuk menyalakan kamera.</p>
+                <button id='btn-start-app' class='bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-full shadow-lg transition transform hover:scale-105'>Mulai Kamera</button>
+            </div>
+            <div id='loading-msg' class='overlay-box' style='display:none'>Memuat...</div>
+            <video id='webcam' autoplay playsinline muted></video>
+            <canvas id='output_canvas'></canvas>
+        </div>
+        <div id='ui-panel' class='flex flex-col gap-4'>
+            <div class='flex justify-between items-center'>
+                <div>
+                    <h1 class='text-xl font-bold text-blue-400'>Pengunjung Hari Ini</h1>
+                    <p id='date-display' class='text-gray-400 text-sm'>Tanggal: -</p>
+                </div>
+                <div class='text-5xl font-extrabold text-green-400' id='counter-display'>0</div>
+            </div>
+            <div class='flex gap-2'>
+                <button id='btn-manual' class='flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition'>+1 Manual</button>
+                <button id='btn-save-log' class='flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded transition'>Simpan Data</button>
+            </div>
+            <div class='bg-gray-800 p-3 rounded-lg border border-gray-700 flex-1'>
+                <h2 class='text-sm font-bold text-gray-300 mb-2 border-b border-gray-600 pb-1'>Status Firebase Cloud</h2>
+                <div id='log-display' class='text-xs font-mono text-green-300 break-words whitespace-pre-wrap'>Menunggu tindakan...</div>
+            </div>
+        </div>
+    </div>
+
+    <script type='module'>
+        import{initializeApp}from'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import{getAuth,signInAnonymously,onAuthStateChanged}from'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import{getFirestore,doc,setDoc}from'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        const firebaseConfig={
+            apiKey:'AIzaSyDQDrNzj_rJ6oV1F1Z-YZGBhZQPma_fcZU',
+            authDomain:'penghitungpengunjugkamerav2.firebaseapp.com',
+            projectId:'penghitungpengunjugkamerav2',
+            storageBucket:'penghitungpengunjugkamerav2.firebasestorage.app',
+            messagingSenderId:'348365552099',
+            appId:'1:348365552099:web:1e8a8497ec08ce784348d6'
+        };
+        
+        const app=initializeApp(firebaseConfig);
+        const auth=getAuth(app);
+        const db=getFirestore(app);
+        const appId='default-app-id';
+        let currentUser=null;
+        
+        signInAnonymously(auth);
+        onAuthStateChanged(auth,(user)=>{currentUser=user;});
+        
+        const video=document.getElementById('webcam');
+        const canvas=document.getElementById('output_canvas');
+        const ctx=canvas.getContext('2d');
+        const loadingMsg=document.getElementById('loading-msg');
+        const startPanel=document.getElementById('start-panel');
+        const counterDisplay=document.getElementById('counter-display');
+        const dateDisplay=document.getElementById('date-display');
+        const logDisplay=document.getElementById('log-display');
+        
+        let aiModel=null;
+        let dailyCount=0;
+        let hourlyLogs=[];
+        let lastCountTime=0;
+        
+        const today=new Date();
+        const dateString=today.getDate().toString().padStart(2,'0')+'-'+(today.getMonth()+1).toString().padStart(2,'0')+'-'+today.getFullYear();
+        dateDisplay.innerText='Tanggal: '+dateString;
+        
+        document.getElementById('btn-start-app').addEventListener('click',async()=>{
+            startPanel.style.display='none';
+            loadingMsg.style.display='block';
+            await startCamera();
+        });
+        
+        async function startCamera(){
+            try{
+                loadingMsg.innerHTML='<div class="spinner"></div><div class="font-bold text-white">Meminta Izin Kamera...</div><div class="text-xs text-gray-400 mt-2">Mohon klik Allow.</div>';
+                let stream;
+                try{
+                    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+                }catch(err){
+                    stream=await navigator.mediaDevices.getUserMedia({video:true});
+                }
+                video.srcObject=stream;
+                video.onloadedmetadata=async()=>{
+                    await video.play();
+                    await initializeAI();
+                };
+            }catch(error){
+                loadingMsg.innerHTML='<div class="text-red-400 mb-2 font-bold">Kamera Gagal Dibuka</div><span class="text-xs text-yellow-300">'+error.message+'</span>';
+            }
+        }
+        
+        async function initializeAI(){
+            try{
+                loadingMsg.innerHTML='<div class="spinner"></div><div class="font-bold text-blue-400 text-lg">Mengunduh File AI (~5MB)...</div><div class="text-xs text-gray-300 mt-2">Mohon tunggu, butuh internet stabil.</div>';
+                aiModel=await cocoSsd.load({base:'lite_mobilenet_v2'});
+                loadingMsg.style.display='none';
+                predictWebcam();
+            }catch(error){
+                loadingMsg.innerHTML='<div class="text-red-400 font-bold mb-2">Gagal Memuat AI (Fail to Fetch)</div><div class="text-xs text-yellow-300 mb-3">Koneksi tidak stabil/terputus.</div><button id="btn-retry" class="bg-red-600 hover:bg-red-500 text-white py-2 px-4 rounded text-sm font-bold shadow">Coba Lagi</button>';
+                document.getElementById('btn-retry').addEventListener('click',initializeAI);
+            }
+        }
+        
+        async function predictWebcam(){
+            if(video.videoWidth===0||video.videoHeight===0){
+                requestAnimationFrame(predictWebcam);
+                return;
+            }
+            canvas.width=video.videoWidth;
+            canvas.height=video.videoHeight;
+            ctx.drawImage(video,0,0,canvas.width,canvas.height);
+            const lineY=canvas.height/2;
+            ctx.beginPath();
+            ctx.moveTo(0,lineY);
+            ctx.lineTo(canvas.width,lineY);
+            ctx.lineWidth=4;
+            ctx.strokeStyle='rgba(255, 0, 0, 0.5)';
+            ctx.stroke();
+            
+            if(aiModel){
+                const predictions=await aiModel.detect(video);
+                for(let prediction of predictions){
+                    if(prediction.class==='person'&&prediction.score>0.5){
+                        const[x,y,width,height]=prediction.bbox;
+                        const centerX=x+(width/2);
+                        const centerY=y+(height/2);
+                        ctx.strokeStyle='#00FF00';
+                        ctx.lineWidth=4;
+                        ctx.strokeRect(x,y,width,height);
+                        ctx.fillStyle='yellow';
+                        ctx.beginPath();
+                        ctx.arc(centerX,centerY,5,0,2*Math.PI);
+                        ctx.fill();
+                        const tolerance=canvas.height*0.15;
+                        if(Math.abs(centerY-lineY)<tolerance){
+                            ctx.strokeStyle='yellow';
+                            ctx.strokeRect(x,y,width,height);
+                            const now=Date.now();
+                            if(now-lastCountTime>3000){
+                                dailyCount++;
+                                counterDisplay.innerText=dailyCount;
+                                lastCountTime=now;
+                                counterDisplay.classList.add('text-white');
+                                setTimeout(()=>counterDisplay.classList.remove('text-white'),200);
+                            }
+                        }
+                    }
+                }
+            }
+            requestAnimationFrame(predictWebcam);
+        }
+        
+        function simpanKeLog(isAuto=false){
+            const sekarang=new Date();
+            const jam=sekarang.getHours().toString().padStart(2,'0');
+            const menit=sekarang.getMinutes().toString().padStart(2,'0');
+            const logEntry='['+jam+':'+menit+'; '+dailyCount+']';
+            if(!isAuto){
+                hourlyLogs.push(logEntry);
+            }
+            const fullLogString='Total: '+dailyCount+' orang\nUpdate terakhir: '+jam+':'+menit;
+            logDisplay.innerText=fullLogString+'\n\nMenyimpan ke Firebase...';
+            
+            if(!currentUser){
+                logDisplay.innerText+='\n❌ Menunggu koneksi...';
+                return;
+            }
+            
+            const docRef=doc(db,'artifacts',appId,'public','data','kamera_pengunjung',dateString);
+            setDoc(docRef,{
+                tanggal:dateString,
+                total_pengunjung:dailyCount,
+                logs:hourlyLogs,
+                waktu_update:sekarang.toISOString(),
+                user_id_pengunggah:currentUser.uid
+            },{merge:true}).then(()=>{
+                logDisplay.innerText=fullLogString+'\n\n✅ Tersimpan Otomatis di Cloud!';
+            }).catch((error)=>{
+                logDisplay.innerText=fullLogString+'\n\n❌ Gagal: '+error.message;
+            });
+        }
+        
+        document.getElementById('btn-manual').addEventListener('click',()=>{
+            dailyCount++;
+            counterDisplay.innerText=dailyCount;
+        });
+        
+        document.getElementById('btn-save-log').addEventListener('click',()=>simpanKeLog(false));
+        
+        setInterval(()=>{
+            if(dailyCount>0){
+                simpanKeLog(true);
+            }
+        },120000);
+    </script>
+</body>
+</html>
