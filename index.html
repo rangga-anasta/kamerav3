@@ -23,8 +23,8 @@
     <div id='app-container'>
         <div id='video-container'>
             <div id='start-panel' class='overlay-box flex flex-col items-center gap-4'>
-                <h2 class='text-lg font-bold text-white'>Sistem AI Siap</h2>
-                <p class='text-sm text-gray-400'>Tekan tombol untuk menyalakan kamera.</p>
+                <h2 class='text-lg font-bold text-white'>Sistem AI Siap (V5)</h2>
+                <p class='text-sm text-gray-400'>Arah Masuk: Atas ke Bawah.</p>
                 <button id='btn-start-app' class='bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-full shadow-lg transition transform hover:scale-105'>Mulai Kamera</button>
             </div>
             <div id='loading-msg' class='overlay-box' style='display:none'>Memuat...</div>
@@ -85,7 +85,11 @@
         let aiModel=null;
         let dailyCount=0;
         let hourlyLogs=[];
-        let lastCountTime=0;
+        
+        // VARIABEL TRACKING V5 (Dengan Deteksi Arah)
+        let trackedPersons = []; 
+        let idCounter = 0;
+        const MAX_DISTANCE = 150; // Jarak maksimal pergerakan antar frame
         
         const today=new Date();
         const dateString=today.getDate().toString().padStart(2,'0')+'-'+(today.getMonth()+1).toString().padStart(2,'0')+'-'+today.getFullYear();
@@ -135,7 +139,8 @@
             }
             canvas.width=video.videoWidth;
             canvas.height=video.videoHeight;
-            ctx.drawImage(video,0,0,canvas.width,canvas.height);
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            
             const lineY=canvas.height/2;
             ctx.beginPath();
             ctx.moveTo(0,lineY);
@@ -146,31 +151,100 @@
             
             if(aiModel){
                 const predictions=await aiModel.detect(video);
+                let currentDetections = [];
+                
                 for(let prediction of predictions){
                     if(prediction.class==='person'&&prediction.score>0.5){
                         const[x,y,width,height]=prediction.bbox;
-                        const centerX=x+(width/2);
-                        const centerY=y+(height/2);
-                        ctx.strokeStyle='#00FF00';
-                        ctx.lineWidth=4;
-                        ctx.strokeRect(x,y,width,height);
-                        ctx.fillStyle='yellow';
-                        ctx.beginPath();
-                        ctx.arc(centerX,centerY,5,0,2*Math.PI);
-                        ctx.fill();
-                        const tolerance=canvas.height*0.15;
-                        if(Math.abs(centerY-lineY)<tolerance){
-                            ctx.strokeStyle='yellow';
-                            ctx.strokeRect(x,y,width,height);
-                            const now=Date.now();
-                            if(now-lastCountTime>3000){
+                        currentDetections.push({
+                            x: x, y: y, w: width, h: height,
+                            cx: x + (width/2), cy: y + (height/2)
+                        });
+                    }
+                }
+                
+                let newTrackedPersons = [];
+                let availableTracks = [...trackedPersons];
+                
+                for(let det of currentDetections){
+                    let matchedIdx = -1;
+                    let minDistance = MAX_DISTANCE;
+                    
+                    for(let i=0; i<availableTracks.length; i++){
+                        let track = availableTracks[i];
+                        let dist = Math.hypot(det.cx - track.cx, det.cy - track.cy);
+                        if(dist < minDistance){
+                            minDistance = dist;
+                            matchedIdx = i;
+                        }
+                    }
+                    
+                    if(matchedIdx !== -1){
+                        let matchedPerson = availableTracks[matchedIdx];
+                        matchedPerson.cx = det.cx;
+                        matchedPerson.cy = det.cy;
+                        matchedPerson.bbox = [det.x, det.y, det.w, det.h];
+                        matchedPerson.hilang = 0; // Kelihatan lagi
+                        
+                        // LOGIKA ARAH V5
+                        if(!matchedPerson.counted){
+                            // OPSI B: Berasal dari Atas, lalu melewati garis merah ke Bawah
+                            if(matchedPerson.startZone === 'atas' && matchedPerson.cy >= lineY){
+                                matchedPerson.counted = true;
+                                matchedPerson.color = 'gray'; // Dihitung (Abu-abu)
                                 dailyCount++;
-                                counterDisplay.innerText=dailyCount;
-                                lastCountTime=now;
+                                counterDisplay.innerText = dailyCount;
                                 counterDisplay.classList.add('text-white');
                                 setTimeout(()=>counterDisplay.classList.remove('text-white'),200);
                             }
+                            // OPSI B: Berasal dari Bawah, lalu melewati garis merah ke Atas (KELUAR)
+                            else if(matchedPerson.startZone === 'bawah' && matchedPerson.cy <= lineY){
+                                matchedPerson.counted = true; 
+                                matchedPerson.color = '#3b82f6'; // Diabaikan / Keluar (Biru)
+                            }
                         }
+                        
+                        newTrackedPersons.push(matchedPerson);
+                        availableTracks.splice(matchedIdx, 1);
+                    } else {
+                        // Jika ID Baru, tentukan asalnya darimana (Atas/Bawah)
+                        idCounter++;
+                        let asalZone = det.cy < lineY ? 'atas' : 'bawah';
+                        
+                        newTrackedPersons.push({
+                            id: idCounter, cx: det.cx, cy: det.cy,
+                            bbox: [det.x, det.y, det.w, det.h],
+                            counted: false, hilang: 0,
+                            startZone: asalZone, 
+                            color: '#00FF00' // Default Hijau
+                        });
+                    }
+                }
+                
+                // Ingat orang yang kehilangan deteksi sejenak (hingga 15 frame/sekitar 0.5 detik)
+                for(let track of availableTracks){
+                    track.hilang++;
+                    if(track.hilang < 15){ 
+                        newTrackedPersons.push(track);
+                    }
+                }
+                trackedPersons = newTrackedPersons;
+                
+                // Proses Menggambar Visual (Kotak & Titik)
+                for(let person of trackedPersons){
+                    if(person.hilang === 0){ 
+                        ctx.strokeStyle = person.color;
+                        ctx.lineWidth = 4;
+                        ctx.strokeRect(person.bbox[0], person.bbox[1], person.bbox[2], person.bbox[3]);
+                        
+                        ctx.fillStyle = person.color;
+                        ctx.font = '16px sans-serif';
+                        let labelArah = person.startZone === 'atas' ? ' (Msk)' : ' (Klr)';
+                        ctx.fillText('ID: ' + person.id + labelArah, person.bbox[0], person.bbox[1] - 5);
+                        
+                        ctx.beginPath();
+                        ctx.arc(person.cx, person.cy, 5, 0, 2 * Math.PI);
+                        ctx.fill();
                     }
                 }
             }
