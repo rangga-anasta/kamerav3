@@ -7,14 +7,19 @@
     <script src='https://cdn.jsdelivr.net/npm/@tensorflow/tfjs'></script>
     <script src='https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd'></script>
     <style>
-        body{margin:0;padding:0;background-color:#111;color:white;font-family:sans-serif;overflow:hidden}
-        #app-container{display:flex;flex-direction:column;height:100vh;width:100%}
-        #video-container{position:relative;flex:1;background:#000;display:flex;justify-content:center;align-items:center;overflow:hidden}
-        video,canvas{position:absolute;width:100%;height:100%;object-fit:cover}
+        body{margin:0;padding:1rem;background-color:#111;color:white;font-family:sans-serif;}
+        /* Container utama sekarang dibatasi maksimal 500px agar rapi dan tidak full screen */
+        #app-container{max-width:500px;margin:0 auto;display:flex;flex-direction:column;gap:1rem;}
+        
+        /* Video container diubah menjadi rasio 4:3 dan kotaknya melengkung rapi */
+        #video-container{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:0.75rem;border:2px solid #374151;overflow:hidden;display:flex;justify-content:center;align-items:center;}
+        
+        video,canvas{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;}
         video{opacity:0;z-index:1}
         canvas{z-index:10}
-        #ui-panel{background:#1f2937;padding:1rem;z-index:20;border-top:2px solid #374151}
-        .overlay-box{position:absolute;z-index:30;background:rgba(0,0,0,0.8);padding:1.5rem;border-radius:1rem;text-align:center;border:1px solid #333;left:50%;top:50%;transform:translate(-50%,-50%);width:85%;max-width:320px}
+        
+        #ui-panel{background:#1f2937;padding:1rem;border-radius:0.75rem;border:1px solid #374151;}
+        .overlay-box{position:absolute;z-index:30;background:rgba(0,0,0,0.85);padding:1.5rem;border-radius:1rem;text-align:center;border:1px solid #444;width:85%;max-width:300px;}
         .spinner{border:4px solid rgba(255,255,255,0.2);border-top:4px solid #3b82f6;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:0 auto 10px auto}
         @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
     </style>
@@ -23,29 +28,30 @@
     <div id='app-container'>
         <div id='video-container'>
             <div id='start-panel' class='overlay-box flex flex-col items-center gap-4'>
-                <h2 class='text-lg font-bold text-white'>Sistem AI Siap (V5)</h2>
-                <p class='text-sm text-gray-400'>Arah Masuk: Atas ke Bawah.</p>
-                <button id='btn-start-app' class='bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-full shadow-lg transition transform hover:scale-105'>Mulai Kamera</button>
+                <h2 class='text-lg font-bold text-white'>AI CCTV Siap</h2>
+                <p class='text-xs text-gray-400'>Mode Ringan & Ringkas Aktif.</p>
+                <button id='btn-start-app' class='bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-full shadow-lg transition transform hover:scale-105'>Nyalakan Kamera</button>
             </div>
             <div id='loading-msg' class='overlay-box' style='display:none'>Memuat...</div>
             <video id='webcam' autoplay playsinline muted></video>
             <canvas id='output_canvas'></canvas>
         </div>
-        <div id='ui-panel' class='flex flex-col gap-4'>
+        
+        <div id='ui-panel' class='flex flex-col gap-4 shadow-lg'>
             <div class='flex justify-between items-center'>
                 <div>
-                    <h1 class='text-xl font-bold text-blue-400'>Pengunjung Hari Ini</h1>
-                    <p id='date-display' class='text-gray-400 text-sm'>Tanggal: -</p>
+                    <h1 class='text-xl font-bold text-blue-400'>Total Pengunjung</h1>
+                    <p id='date-display' class='text-gray-400 text-xs'>Tanggal: -</p>
                 </div>
                 <div class='text-5xl font-extrabold text-green-400' id='counter-display'>0</div>
             </div>
             <div class='flex gap-2'>
-                <button id='btn-manual' class='flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition'>+1 Manual</button>
-                <button id='btn-save-log' class='flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded transition'>Simpan Data</button>
+                <button id='btn-manual' class='flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition text-sm'>+1 Manual</button>
+                <button id='btn-save-log' class='flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded transition text-sm'>Simpan Data</button>
             </div>
-            <div class='bg-gray-800 p-3 rounded-lg border border-gray-700 flex-1'>
-                <h2 class='text-sm font-bold text-gray-300 mb-2 border-b border-gray-600 pb-1'>Status Firebase Cloud</h2>
-                <div id='log-display' class='text-xs font-mono text-green-300 break-words whitespace-pre-wrap'>Menunggu tindakan...</div>
+            <div class='bg-gray-800 p-3 rounded-lg border border-gray-700'>
+                <h2 class='text-xs font-bold text-gray-400 mb-1'>Log Server:</h2>
+                <div id='log-display' class='text-xs font-mono text-green-300 break-words whitespace-pre-wrap'>Sistem siap...</div>
             </div>
         </div>
     </div>
@@ -86,10 +92,9 @@
         let dailyCount=0;
         let hourlyLogs=[];
         
-        // VARIABEL TRACKING V5 (Dengan Deteksi Arah)
         let trackedPersons = []; 
         let idCounter = 0;
-        const MAX_DISTANCE = 150; // Jarak maksimal pergerakan antar frame
+        const MAX_DISTANCE = 150; 
         
         const today=new Date();
         const dateString=today.getDate().toString().padStart(2,'0')+'-'+(today.getMonth()+1).toString().padStart(2,'0')+'-'+today.getFullYear();
@@ -103,10 +108,13 @@
         
         async function startCamera(){
             try{
-                loadingMsg.innerHTML='<div class="spinner"></div><div class="font-bold text-white">Meminta Izin Kamera...</div><div class="text-xs text-gray-400 mt-2">Mohon klik Allow.</div>';
+                loadingMsg.innerHTML='<div class="spinner"></div><div class="font-bold text-white">Membuka Kamera...</div>';
                 let stream;
                 try{
-                    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+                    // MEMINTA RESOLUSI RENDAH (480p) AGAR HP RINGAN
+                    stream=await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment', width: { ideal: 480 }, height: { ideal: 360 } }
+                    });
                 }catch(err){
                     stream=await navigator.mediaDevices.getUserMedia({video:true});
                 }
@@ -116,18 +124,18 @@
                     await initializeAI();
                 };
             }catch(error){
-                loadingMsg.innerHTML='<div class="text-red-400 mb-2 font-bold">Kamera Gagal Dibuka</div><span class="text-xs text-yellow-300">'+error.message+'</span>';
+                loadingMsg.innerHTML='<div class="text-red-400 mb-2 font-bold">Kamera Gagal</div><span class="text-xs text-yellow-300">'+error.message+'</span>';
             }
         }
         
         async function initializeAI(){
             try{
-                loadingMsg.innerHTML='<div class="spinner"></div><div class="font-bold text-blue-400 text-lg">Mengunduh File AI (~5MB)...</div><div class="text-xs text-gray-300 mt-2">Mohon tunggu, butuh internet stabil.</div>';
+                loadingMsg.innerHTML='<div class="spinner"></div><div class="font-bold text-blue-400 text-sm">Memuat AI...</div>';
                 aiModel=await cocoSsd.load({base:'lite_mobilenet_v2'});
                 loadingMsg.style.display='none';
                 predictWebcam();
             }catch(error){
-                loadingMsg.innerHTML='<div class="text-red-400 font-bold mb-2">Gagal Memuat AI (Fail to Fetch)</div><div class="text-xs text-yellow-300 mb-3">Koneksi tidak stabil/terputus.</div><button id="btn-retry" class="bg-red-600 hover:bg-red-500 text-white py-2 px-4 rounded text-sm font-bold shadow">Coba Lagi</button>';
+                loadingMsg.innerHTML='<div class="text-red-400 font-bold mb-2">Gagal Memuat AI</div><button id="btn-retry" class="bg-red-600 hover:bg-red-500 text-white py-1 px-3 rounded text-sm">Coba Lagi</button>';
                 document.getElementById('btn-retry').addEventListener('click',initializeAI);
             }
         }
@@ -139,14 +147,16 @@
             }
             canvas.width=video.videoWidth;
             canvas.height=video.videoHeight;
-            ctx.clearRect(0,0,canvas.width,canvas.height);
+            
+            // INI BARIS YANG HILANG KEMARIN: MENGGAMBAR VIDEO KE LAYAR
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height); 
             
             const lineY=canvas.height/2;
             ctx.beginPath();
             ctx.moveTo(0,lineY);
             ctx.lineTo(canvas.width,lineY);
-            ctx.lineWidth=4;
-            ctx.strokeStyle='rgba(255, 0, 0, 0.5)';
+            ctx.lineWidth=3;
+            ctx.strokeStyle='rgba(255, 0, 0, 0.7)';
             ctx.stroke();
             
             if(aiModel){
@@ -184,30 +194,26 @@
                         matchedPerson.cx = det.cx;
                         matchedPerson.cy = det.cy;
                         matchedPerson.bbox = [det.x, det.y, det.w, det.h];
-                        matchedPerson.hilang = 0; // Kelihatan lagi
+                        matchedPerson.hilang = 0; 
                         
-                        // LOGIKA ARAH V5
                         if(!matchedPerson.counted){
-                            // OPSI B: Berasal dari Atas, lalu melewati garis merah ke Bawah
                             if(matchedPerson.startZone === 'atas' && matchedPerson.cy >= lineY){
                                 matchedPerson.counted = true;
-                                matchedPerson.color = 'gray'; // Dihitung (Abu-abu)
+                                matchedPerson.color = '#9ca3af'; // Abu-abu
                                 dailyCount++;
                                 counterDisplay.innerText = dailyCount;
                                 counterDisplay.classList.add('text-white');
                                 setTimeout(()=>counterDisplay.classList.remove('text-white'),200);
                             }
-                            // OPSI B: Berasal dari Bawah, lalu melewati garis merah ke Atas (KELUAR)
                             else if(matchedPerson.startZone === 'bawah' && matchedPerson.cy <= lineY){
                                 matchedPerson.counted = true; 
-                                matchedPerson.color = '#3b82f6'; // Diabaikan / Keluar (Biru)
+                                matchedPerson.color = '#3b82f6'; // Biru (Diabaikan)
                             }
                         }
                         
                         newTrackedPersons.push(matchedPerson);
                         availableTracks.splice(matchedIdx, 1);
                     } else {
-                        // Jika ID Baru, tentukan asalnya darimana (Atas/Bawah)
                         idCounter++;
                         let asalZone = det.cy < lineY ? 'atas' : 'bawah';
                         
@@ -216,12 +222,11 @@
                             bbox: [det.x, det.y, det.w, det.h],
                             counted: false, hilang: 0,
                             startZone: asalZone, 
-                            color: '#00FF00' // Default Hijau
+                            color: '#22c55e' // Hijau
                         });
                     }
                 }
                 
-                // Ingat orang yang kehilangan deteksi sejenak (hingga 15 frame/sekitar 0.5 detik)
                 for(let track of availableTracks){
                     track.hilang++;
                     if(track.hilang < 15){ 
@@ -230,20 +235,19 @@
                 }
                 trackedPersons = newTrackedPersons;
                 
-                // Proses Menggambar Visual (Kotak & Titik)
                 for(let person of trackedPersons){
                     if(person.hilang === 0){ 
                         ctx.strokeStyle = person.color;
-                        ctx.lineWidth = 4;
+                        ctx.lineWidth = 3;
                         ctx.strokeRect(person.bbox[0], person.bbox[1], person.bbox[2], person.bbox[3]);
                         
                         ctx.fillStyle = person.color;
-                        ctx.font = '16px sans-serif';
+                        ctx.font = '14px sans-serif';
                         let labelArah = person.startZone === 'atas' ? ' (Msk)' : ' (Klr)';
                         ctx.fillText('ID: ' + person.id + labelArah, person.bbox[0], person.bbox[1] - 5);
                         
                         ctx.beginPath();
-                        ctx.arc(person.cx, person.cy, 5, 0, 2 * Math.PI);
+                        ctx.arc(person.cx, person.cy, 4, 0, 2 * Math.PI);
                         ctx.fill();
                     }
                 }
@@ -259,8 +263,8 @@
             if(!isAuto){
                 hourlyLogs.push(logEntry);
             }
-            const fullLogString='Total: '+dailyCount+' orang\nUpdate terakhir: '+jam+':'+menit;
-            logDisplay.innerText=fullLogString+'\n\nMenyimpan ke Firebase...';
+            const fullLogString='Total: '+dailyCount+'\nUpdate: '+jam+':'+menit;
+            logDisplay.innerText=fullLogString+'\nMenyimpan...';
             
             if(!currentUser){
                 logDisplay.innerText+='\n❌ Menunggu koneksi...';
@@ -275,9 +279,9 @@
                 waktu_update:sekarang.toISOString(),
                 user_id_pengunggah:currentUser.uid
             },{merge:true}).then(()=>{
-                logDisplay.innerText=fullLogString+'\n\n✅ Tersimpan Otomatis di Cloud!';
+                logDisplay.innerText=fullLogString+'\n✅ Tersimpan di Cloud';
             }).catch((error)=>{
-                logDisplay.innerText=fullLogString+'\n\n❌ Gagal: '+error.message;
+                logDisplay.innerText=fullLogString+'\n❌ Gagal: '+error.message;
             });
         }
         
